@@ -33,8 +33,41 @@ class ChatClient:
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((HOST, PORT))
-        self.conversation_id = 1  # You can randomize or let user choose
         self.character_name = "Clara"
+
+        # Load or request conversation_id (uid)
+        save_path = os.path.join(os.path.dirname(__file__), "../client_saves/save.txt")
+        if os.path.exists(save_path):
+            try:
+                with open(save_path, "r", encoding="utf-8") as f:
+                    self.conversation_id = f.read().strip()
+            except Exception:
+                self.conversation_id = "0"
+        else:
+            self.conversation_id = "0"
+
+        if self.conversation_id == "0" or not self.conversation_id:
+            # Request UID from server
+            request = {"conversation_id": 0}
+            data = json.dumps(request, ensure_ascii=False).encode('utf-8')
+            size = struct.pack('<I', len(data))
+            self.sock.sendall(size + data)
+            raw_size = self.sock.recv(4)
+            if raw_size:
+                resp_size = struct.unpack('<I', raw_size)[0]
+                resp_data = b''
+                while len(resp_data) < resp_size:
+                    packet = self.sock.recv(resp_size - len(resp_data))
+                    if not packet:
+                        break
+                    resp_data += packet
+                if resp_data:
+                    response = json.loads(resp_data.decode('utf-8'))
+                    self.conversation_id = response.get("uid", "0")
+                    # Save UID to file
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    with open(save_path, "w", encoding="utf-8") as f:
+                        f.write(self.conversation_id)
 
     def send_message(self, event=None):
         user_input = self.entry.get()

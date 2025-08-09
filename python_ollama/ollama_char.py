@@ -139,6 +139,37 @@ def load_character_info(character_name):
             print(f"Failed to load character data: {e}")
     return char_desc, personality
 
+def load_chat_history_from_log(log_path, short_term_memory):
+    """Load chat history from a log file and add it to short-term memory."""
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        log_entry = json.loads(line)
+                        user_input = log_entry.get("user_input", "")
+                        answer = log_entry.get("answer", "")
+                        short_term_memory.save_context(
+                            {"input": user_input},
+                            {"output": answer}
+                        )
+                    except Exception as e:
+                        logging.warning(f"Failed to parse log line: {e}")
+        except Exception as e:
+            logging.warning(f"Failed to load chat history: {e}")
+
+def save_chat_to_log(log_path, user_input, answer):
+    """Append a user input and answer to the log file."""
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as logf:
+            logf.write(json.dumps({
+                "user_input": user_input,
+                "answer": answer
+            }, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logging.warning(f"Failed to write to log: {e}")
+
 class OllamaCharacter:
     def __init__(self, character_name, conversation_id, model=DEFAULT_MODEL_NAME, base_url=DEFAULT_BASE_URL, window_size=5):
         """
@@ -146,9 +177,9 @@ class OllamaCharacter:
         
         Args:
             character_name (str): Name of the character.
-            conversation_id (int): Unique identifier for the conversation.
-            model (str): Ollama model name (default: llama3.2).
-            base_url (str): Ollama server URL (default: http://localhost:11434).
+            conversation_id (str): Unique identifier for the conversation (uuid).
+            model (str): Ollama model name.
+            base_url (str): Ollama server URL.
             window_size (int): Number of recent interactions to keep in short-term memory.
         """
         self.character_name = character_name
@@ -174,6 +205,10 @@ class OllamaCharacter:
             llm=self.llm,
             memory_key="summary_memory"
         )
+
+        # Restore chat history from log if exists
+        self.log_path = os.path.join(os.path.dirname(__file__), "server_saves", f"{self.conversation_id}.log")
+        load_chat_history_from_log(self.log_path, self.short_term_memory)
 
         # Define the prompt template for roleplaying
         self.prompt_template = PromptTemplate(
@@ -272,6 +307,8 @@ class OllamaCharacter:
         if not parsed_response['answer']:
             parsed_response['answer'] = response
         logging.info(parsed_response)
+        # Log user input and answer to file
+        save_chat_to_log(self.log_path, user_input, parsed_response['answer'])
         return parsed_response
     
     def clear_memory(self):
