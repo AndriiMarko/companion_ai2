@@ -2,10 +2,17 @@ import socket
 import threading
 import json
 import struct
+import os
 from ollama_char import OllamaCharacter
 
-HOST = '127.0.0.1'
-PORT = 55555
+# Load settings
+with open(os.path.join(os.path.dirname(__file__), '../config/settings.json'), 'r', encoding='utf-8') as f:
+    config = json.load(f)
+
+HOST = config.get("HOST", "127.0.0.1")
+PORT = config.get("PORT", 55555)
+MODEL_NAME = config.get("model_name", "deepseek-r1-14b-q4")
+BASE_URL = config.get("base_url", "http://localhost:11434")
 
 # You can manage multiple conversations by storing them in a dict
 characters = {}
@@ -36,7 +43,9 @@ def handle_client(conn, addr):
         # Create OllamaCharacter instance for this connection
         character = OllamaCharacter(
             character_name=character_name,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
+            model=MODEL_NAME,
+            base_url=BASE_URL
         )
 
         # Respond to the first message

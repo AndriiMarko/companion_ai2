@@ -1,10 +1,18 @@
 import os
+import json
 import logging
 from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.memory import ConversationBufferWindowMemory, ConversationSummaryMemory
 from langchain_core.runnables import RunnablePassthrough
+
+# Load settings
+with open(os.path.join(os.path.dirname(__file__), '../config/settings.json'), 'r', encoding='utf-8') as f:
+    config = json.load(f)
+
+DEFAULT_MODEL_NAME = config.get("model_name", "deepseek-r1-14b-q4")
+DEFAULT_BASE_URL = config.get("base_url", "http://localhost:11434")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -132,7 +140,7 @@ def load_character_info(character_name):
     return char_desc, personality
 
 class OllamaCharacter:
-    def __init__(self, character_name, conversation_id, model="deepseek-r1-14b-q4", base_url="http://localhost:11434", window_size=5):
+    def __init__(self, character_name, conversation_id, model=DEFAULT_MODEL_NAME, base_url=DEFAULT_BASE_URL, window_size=5):
         """
         Initialize the OllamaCharacter with character details and memory.
         

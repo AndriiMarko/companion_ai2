@@ -5,9 +5,16 @@ import json
 import tkinter as tk
 from tkinter import scrolledtext
 import threading
+import os
 
-HOST = '127.0.0.1'
-PORT = 55555
+# Load settings
+with open(os.path.join(os.path.dirname(__file__), '../config/settings.json'), 'r', encoding='utf-8') as f:
+    config = json.load(f)
+
+HOST = config.get("HOST", "127.0.0.1")
+PORT = config.get("PORT", 55555)
+MODEL_NAME = config.get("model_name", "deepseek-r1-14b-q4")
+BASE_URL = config.get("base_url", "http://localhost:11434")
 
 class ChatClient:
     def __init__(self, master):
