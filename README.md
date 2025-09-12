@@ -213,3 +213,175 @@ The app maintains short-term memory (last 5 interactions) and long-term memory (
 - **Customization**: Modify `character_name`, `character_description`, and `context` in `messenger_ui.py` to change the character or scenario.
 
 For further details, visit [Ollama’s documentation](https://ollama.com/docs) or [LangChain’s documentation](https://python.langchain.com/docs).
+
+# Unity Messenger Chat – Architecture Overview
+
+This document describes the architecture of the **Messenger Chat system** implemented in Unity.  
+The design focuses on **thread safety**, **cross-platform compatibility**, and **modularity**.
+
+---
+
+## 🏗️ High-Level Design
+
+The chat system is composed of three main layers:
+
+1. **UI Layer (Main Thread)**
+   - Handles user input (typing + send button).
+   - Renders chat bubbles for sent and received messages.
+   - Saves and loads chat history from disk.
+
+2. **Communication Layer (Background Thread)**
+   - Manages socket connection to a server.
+   - Encodes/decodes messages into JSON.
+   - Ensures continuous bidirectional communication.
+
+3. **Thread-Safe Queues**
+   - Provide a bridge between the **UI (main thread)** and the **socket thread**.
+   - Prevent Unity API calls from background threads.
+
+---
+
+## 🔄 Message Flow
+
+### Sending a message:
+1. User types a message and presses **Send**.  
+2. `ChatManager`:
+   - Instantiates a right-aligned message bubble.
+   - Pushes the text into the **Send Queue**.  
+3. `SocketClient` (background thread):
+   - Pulls the message from **Send Queue**.
+   - Serializes to JSON and sends through the socket.
+
+### Receiving a message:
+1. Server responds with a JSON payload.  
+2. `SocketClient`:
+   - Reads raw bytes from the socket.
+   - Deserializes JSON into a `ChatMessage` object.
+   - Pushes text into the **Receive Queue**.  
+3. `ChatManager` (in `Update()`):
+   - Dequeues pending messages.
+   - Creates left-aligned message bubbles in the UI.
+
+---
+
+## 📦 Components
+
+### 1. **ChatManager (MonoBehaviour)**
+- Runs on the **main thread**.
+- Responsibilities:
+  - Manage UI (input field, chat bubbles, scroll view).
+  - Add outgoing messages to **Send Queue**.
+  - Poll **Receive Queue** in `Update()` to render server responses.
+  - Save/load chat history from `Application.persistentDataPath`.
+
+---
+
+### 2. **SocketClient (Background Thread)**
+- Runs on a **dedicated thread**.
+- Responsibilities:
+  - Establish TCP connection to server.
+  - Continuously:
+    - Send pending messages from **Send Queue**.
+    - Receive server responses and push into **Receive Queue**.
+  - Gracefully close connection on quit.
+
+---
+
+### 3. **ChatQueues (Static Class)**
+- Two thread-safe queues (implemented with `Queue<T>` + `lock` or `ConcurrentQueue<T>` depending on API level).
+  - `SendQueue` → from UI → Socket thread.
+  - `ReceiveQueue` → from Socket thread → UI.
+
+---
+
+### 4. **ChatMessage (Serializable Model)**
+- Represents a single message in the chat.
+- Example:
+  ```csharp
+  [Serializable]
+  public class ChatMessage {
+      public string text;
+      public bool isSentByUser;
+      public string timestamp;
+  }
+
+### 5. SaveSystem
+- Not Implemented yet
+
+### 6. UI layout
+- Input Field (TMP_InputField) → user types text.
+- Send Button → adds to send queue.
+- Scroll View → auto-scrolls to latest message.
+   - Message Container (Vertical Layout Group) → holds message bubbles.
+      - Message Bubbles:
+         - Left bubble = server response.
+         - Right bubble = user message.
+
+
+# 📡 Message Format – Unity Messenger Chat
+
+This document describes the **socket communication protocol** between the Unity client and the server.
+
+---
+
+## 🔹 Message Structure
+
+All messages are sent using the following format:
+
+[size][json]
+
+
+- **`size`** → 4-byte little-endian integer (`int32`) representing the length of the JSON payload (in bytes).
+- **`json`** → UTF-8 encoded JSON string.
+
+This ensures the receiver knows exactly how many bytes to read for each message.
+
+---
+
+## 🔹 Client → Server: `SCRequest`
+
+```csharp
+public class SCRequest
+{
+    public string input;            // User input text
+    public string conversation_id;  // Existing conversation ID, or "0" for a new one
+    public string character_name;   // Target character for conversation
+}
+
+{
+  "input": "Hello there!",
+  "conversation_id": "12345",
+  "character_name": "Bot"
+}
+```
+
+## 🔹 Server → Client: SCResponse
+```csharp
+public class SCResponse
+{
+    public string thinking; // (Optional) internal thoughts or reasoning
+    public string answer;   // Main text answer to display
+    public string mood;     // Emotional tone of the response
+    public string actions;  // Suggested actions (if any)
+}
+
+{
+  "thinking": "User greeted me, I should respond politely.",
+  "answer": "Hi! How are you doing today?",
+  "mood": "friendly",
+  "actions": "smile"
+}
+```
+
+## 🔹 Special Case: New Conversation
+If the client sends a request with:
+"conversation_id": "0"
+
+The server responds with a UID assignment:
+```json
+{
+  "uid": "67890"
+}
+```
+The client must store this new uid and use it as conversation_id in all subsequent requests.
+This establishes a persistent session with the server.
